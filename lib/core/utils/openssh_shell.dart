@@ -20,9 +20,11 @@ import 'package:server_box/data/model/server/shell_backend.dart';
 /// sat in the background alive instead of silently freezing.
 ///
 /// Credentials come from the server the way dartssh2 gets them: a stored key
-/// is written out as an `IdentityFile`, a stored password is answered through
-/// `SSH_ASKPASS`. A private key that needs a passphrase is left to ssh to ask
-/// for in the terminal, exactly as it would on a desktop.
+/// is written out as an `IdentityFile`, and a stored password is entered by
+/// ssh's own prompt in the terminal (Android will not exec a helper script
+/// out of the app's data directory, so SSH_ASKPASS is off the table). A
+/// private key that needs a passphrase is likewise asked for in the terminal,
+/// exactly as it would be on a desktop.
 class OpenSshShellBackend implements ShellBackend {
   OpenSshShellBackend({required this.spi});
 
@@ -35,7 +37,6 @@ class OpenSshShellBackend implements ShellBackend {
   final _sessions = <ShellSession>[];
 
   String? _keyFile;
-  String? _passwordFile;
 
   @override
   bool get isClosed => _closed;
@@ -88,12 +89,6 @@ class OpenSshShellBackend implements ShellBackend {
         File(keyFile).deleteSync();
       } catch (_) {}
     }
-    final passwordFile = _passwordFile;
-    if (passwordFile != null) {
-      try {
-        File(passwordFile).deleteSync();
-      } catch (_) {}
-    }
   }
 
   /// Writes whatever credential the server holds into files ssh can read, and
@@ -134,20 +129,10 @@ class OpenSshShellBackend implements ShellBackend {
         ..add(keyFile);
       _keyFile = keyFile;
     }
-
-    final pwd = ssh.pwd;
-    if (pwd != null && pwd.isNotEmpty) {
-      final passwordFile = '$home/.pw';
-      await File(passwordFile).writeAsString(pwd, flush: true);
-      await Process.run('/system/bin/chmod', ['600', passwordFile]);
-      final askpass = '$home/askpass.sh';
-      await File(askpass).writeAsString(
-        '#!/system/bin/sh\ncat $passwordFile\n',
-        flush: true,
-      );
-      await Process.run('/system/bin/chmod', ['700', askpass]);
-      _passwordFile = passwordFile;
-    }
+    // A stored password is answered interactively by ssh in the terminal.
+    // Feeding it through SSH_ASKPASS is tempting but the askpass helper would
+    // have to live in the app's data directory — which Android will not exec —
+    // and ssh would die the moment the helper did.
 
     args.add('${ssh.user}@${ssh.ip}');
     return args;
@@ -159,16 +144,15 @@ class OpenSshShellBackend implements ShellBackend {
     required int height,
     Map<String, String>? environment,
   }) {
+    // Run ssh through bash so its diagnostics reach the terminal either way:
+    // `exec` hands the pty to ssh unchanged, and if ssh cannot even start the
+    // shell's error (missing library, bad argument) is what the page shows
+    // instead of a session that silently dies in the first second.
     final session = _OpenSshSession(
       Pty.start(
-        Toolchain.sshPath,
-        arguments: args,
-        environment: Toolchain.environment({
-          // Force the askpass route so a stored password never waits on a
-          // prompt nobody is looking at. OpenSSH >= 8.4 understands this; the
-          // bundled client is far newer.
-          if (_passwordFile != null) 'SSH_ASKPASS_REQUIRE': 'force',
-        }),
+        Toolchain.bashPath,
+        arguments: ['-c', 'exec ssh "\$@"', 'bash', ...args],
+        environment: Toolchain.environment(),
         workingDirectory: Toolchain.homeDir,
         rows: height > 0 ? height : 25,
         columns: width > 0 ? width : 80,
