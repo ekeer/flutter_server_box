@@ -1,0 +1,1 @@
+exec bzip2 --alias-bunzip2 "$@"
