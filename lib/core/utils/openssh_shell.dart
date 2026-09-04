@@ -145,13 +145,24 @@ class OpenSshShellBackend implements ShellBackend {
     Map<String, String>? environment,
   }) {
     // Run ssh through bash so its diagnostics reach the terminal either way:
-    // `exec` hands the pty to ssh unchanged, and if ssh cannot even start the
-    // shell's error (missing library, bad argument) is what the page shows
-    // instead of a session that silently dies in the first second.
+    // `exec` hands the pty to ssh unchanged, and if ssh cannot even start,
+    // bash prints where it looked and what it found instead of the page going
+    // silently blank.
+    const probe = r'''
+if ! command -v ssh >/dev/null 2>&1; then
+  echo "ERROR: bundled ssh not found"
+  echo "PATH=$PATH"
+  echo "LD_LIBRARY_PATH=$LD_LIBRARY_PATH"
+  echo "-- bin --"; ls -la "$HOME/bin" 2>&1 | head -20
+  echo "-- lib --"; ls -la "$HOME/lib" 2>&1 | head -20
+  exit 127
+fi
+exec ssh "$@"
+''';
     final session = _OpenSshSession(
       Pty.start(
         Toolchain.bashPath,
-        arguments: ['-c', 'exec ssh "\$@"', 'bash', ...args],
+        arguments: ['-c', probe, 'bash', ...args],
         environment: Toolchain.environment(),
         workingDirectory: Toolchain.homeDir,
         rows: height > 0 ? height : 25,
