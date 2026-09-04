@@ -64,28 +64,24 @@ abstract final class Toolchain {
     Directory(binDir).createSync(recursive: true);
     Directory(libDir).createSync(recursive: true);
 
-    // Executables: <native>/bash.so -> <home>/bin/bash
+    // Everything AGP would ship lives flat in the native library directory
+    // (it does not recurse below `<abi>/`). Sort it back out by what the name
+    // answers to: executables keep their command name in `bin`, shared
+    // libraries their load name in `lib`.
     final nativeDir = _nativeDir!;
     for (final entry in Directory(nativeDir).listSync()) {
       final name = entry.uri.pathSegments.last;
       if (entry is! File || !name.endsWith('.so')) continue;
-      _link('$binDir/${_realName(name)}', entry.path);
-    }
-    // Libraries, keeping the subdirectory shape (engines-3, ossl-modules):
-    // <native>/lib/libcrypto.so.3.so -> <home>/lib/libcrypto.so.3
-    final nativeLib = '$nativeDir/lib';
-    if (Directory(nativeLib).existsSync()) {
-      for (final entry in Directory(nativeLib).listSync(recursive: true)) {
-        if (entry is! File) continue;
-        final name = entry.uri.pathSegments.last;
-        if (!name.endsWith('.so')) continue;
-        final rel = entry.path.substring(nativeLib.length + 1);
-        final slash = rel.lastIndexOf('/');
-        final dirPart = slash < 0 ? '' : rel.substring(0, slash);
-        final linkDir = dirPart.isEmpty ? libDir : '$libDir/$dirPart';
-        Directory(linkDir).createSync(recursive: true);
-        _link('$linkDir/${_realName(name)}', entry.path);
+      final real = _realName(name);
+      // OpenSSL engine/legacy provider modules, which nothing here loads by
+      // name. They stay extractable in the native dir but get no link.
+      if (real == 'capi.so' ||
+          real == 'loader_attic.so' ||
+          real == 'legacy.so') {
+        continue;
       }
+      final linkDir = real.startsWith('lib') ? libDir : binDir;
+      _link('$linkDir/$real', entry.path);
     }
   }
 

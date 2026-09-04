@@ -57,7 +57,7 @@ jobs:
           echo "APK: $apk"
           echo "--- lib/arm64-v8a 目录内容(前20) ---"
           unzip -l "$apk" | grep "lib/arm64-v8a/" | head -20 || true
-          for f in bash.so ssh.so coreutils.so adb.so lib/libandroid-support.so.so; do
+          for f in bash.so ssh.so coreutils.so adb.so libandroid-support.so.so libcrypto.so.3.so; do
             unzip -l "$apk" "lib/arm64-v8a/$f" | grep -q "arm64-v8a/$f" \
               && echo "OK  lib/arm64-v8a/$f" \
               || { echo "MISSING lib/arm64-v8a/$f"; exit 1; }
