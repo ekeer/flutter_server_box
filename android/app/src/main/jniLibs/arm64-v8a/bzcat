@@ -1,1 +1,0 @@
-exec bzip2 --alias-bzcat "$@"

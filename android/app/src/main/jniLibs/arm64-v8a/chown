@@ -1,1 +1,0 @@
-exec coreutils --coreutils-prog=chown "$@"

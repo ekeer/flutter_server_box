@@ -1,6 +1,0 @@
-if [ "$SU_COMMAND" = "su" ]; then
-  echo "su: command not found" >&2
-  exit 1
-fi
-
-$SU_COMMAND $SU_ARGUMENTS "$@"

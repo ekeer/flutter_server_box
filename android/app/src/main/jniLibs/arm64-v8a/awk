@@ -1,2 +1,0 @@
-export GAWK_NAME=awk
-gawk "$@"
