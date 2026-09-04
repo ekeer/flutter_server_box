@@ -152,8 +152,16 @@ class SSHPageState extends ConsumerState<SSHPage>
 
   /// The terminal and the shell behind it. Handed in when this page is
   /// continuing a session that started elsewhere, and made here otherwise.
-  late final TerminalSession _sess =
-      widget.args.session ?? TerminalSession(source: widget.args.source);
+  ///
+  /// A server's own terminal prefers the bundled OpenSSH client over
+  /// dartssh2: a real `ssh` process keeps the link alive on its own, which is
+  /// what a session that sat in the background needs. It falls back silently
+  /// wherever the client cannot serve.
+  late final TerminalSession _sess = widget.args.session ??
+      TerminalSession(
+        source: widget.args.source,
+        preferOpenSsh: widget.args.source is ServerSource,
+      );
 
   /// Whether the session arrived already running, and so must not be started
   /// a second time.

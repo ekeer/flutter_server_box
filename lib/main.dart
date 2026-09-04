@@ -19,6 +19,7 @@ import 'package:server_box/core/service/watch_sync.dart';
 import 'package:server_box/core/service/widget_sync.dart';
 import 'package:server_box/core/sync.dart';
 import 'package:server_box/core/utils/rootfs.dart';
+import 'package:server_box/core/utils/toolchain.dart';
 import 'package:server_box/core/utils/rootfs_manifest_source.dart';
 import 'package:server_box/core/utils/sandbox_import.dart';
 import 'package:server_box/core/utils/ssh_native_crypto.dart';
@@ -309,6 +310,14 @@ Future<void> _doPlatformRelated() async {
     await Rootfs.prepare();
   } catch (e, s) {
     Loggers.app.warning('Failed to locate the Linux rootfs', e, s);
+  }
+  // Where the bundled OpenSSH client and its libraries were extracted, when
+  // this build carries them. The terminal page asks [Toolchain.canServe]
+  // while building, so this must answer first.
+  try {
+    await Toolchain.prepare();
+  } catch (e, s) {
+    Loggers.app.warning('Failed to locate the bundled toolchain', e, s);
   }
   // Both open crash reports naming a terminal are on Android, and neither says
   // whether a Linux userland was involved at all.

@@ -1,0 +1,69 @@
+name: Android build (arm64 toolchain)
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths-ignore:
+      - 'docs/**'
+      - 'website/**'
+
+permissions:
+  contents: read
+
+jobs:
+  android:
+    name: Build APK
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          submodules: recursive
+          persist-credentials: false
+          fetch-depth: 0
+      - name: Install Flutter
+        uses: ./.github/actions/setup-flutter
+      - uses: actions/setup-java@dd06d9cba3e5552c54d9f8ea23572deb30010f7c # v6.0.0
+        with:
+          distribution: 'zulu'
+          java-version: '21'
+      - name: Fix the Android build epoch
+        shell: bash
+        run: echo "SOURCE_DATE_EPOCH=$(git log -1 --format=%ct)" >> "$GITHUB_ENV"
+      - name: Install the pinned Android NDK
+        shell: bash
+        run: |
+          set -euo pipefail
+          ndk_version="$(tr -d '[:space:]' < android/ndk-version.txt)"
+          sdkmanager="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          "$sdkmanager" "ndk;$ndk_version"
+          echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/$ndk_version" >> "$GITHUB_ENV"
+      - name: Resolve Dart dependencies
+        run: flutter pub get
+      - name: Allow release build without a store key
+        # This fork ships no signing key. `allowDebugReleaseSigning` makes the
+        # release APK carry the debug key, which installs fine for personal use.
+        shell: bash
+        run: echo "allowDebugReleaseSigning=true" >> android/gradle.properties
+      - name: Build release APK
+        shell: bash
+        run: flutter build apk --release
+      - name: Verify the toolchain shipped
+        shell: bash
+        run: |
+          set -euo pipefail
+          apk="$(ls build/app/outputs/flutter-apk/*.apk | head -1)"
+          echo "APK: $apk"
+          for f in bash ssh coreutils lib/libandroid-support.so; do
+            unzip -l "$apk" "lib/arm64-v8a/$f" | grep -q "arm64-v8a/$f" \
+              && echo "OK  lib/arm64-v8a/$f" \
+              || { echo "MISSING lib/arm64-v8a/$f"; exit 1; }
+          done
+      - name: Upload APK
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: serverbox-arm64-toolchain
+          path: build/app/outputs/flutter-apk/*.apk
+          if-no-files-found: error
+          retention-days: 30

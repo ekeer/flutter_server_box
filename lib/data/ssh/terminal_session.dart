@@ -10,8 +10,10 @@ import 'package:server_box/core/diag.dart';
 import 'package:server_box/core/utils/ish_shell.dart';
 import 'package:server_box/core/utils/local_shell.dart';
 import 'package:server_box/core/utils/monitor_terminal.dart';
+import 'package:server_box/core/utils/openssh_shell.dart';
 import 'package:server_box/core/utils/server.dart';
 import 'package:server_box/core/utils/ssh_auth.dart';
+import 'package:server_box/core/utils/toolchain.dart';
 import 'package:server_box/data/model/server/monitor_remote_access.dart';
 import 'package:server_box/data/model/server/server_private_info.dart';
 import 'package:server_box/data/model/server/shell_backend.dart';
@@ -32,11 +34,23 @@ import 'package:xterm/core.dart';
 /// and the plumbing between them. What a particular *view* of one needs — tmux,
 /// keep-alive, the virtual keyboard, state restoration — stays on the page.
 class TerminalSession {
-  TerminalSession({required this.source, ShellBackend? backend})
-    : _backend = backend;
+  TerminalSession({
+    required this.source,
+    ShellBackend? backend,
+    this.preferOpenSsh = false,
+  }) : _backend = backend;
 
   /// Where this terminal's shell comes from — a server, or this device.
   final TerminalSource source;
+
+  /// Whether a server's shell should be opened with the bundled OpenSSH
+  /// client (in a local pty) instead of dartssh2.
+  ///
+  /// The page that opens a server's *terminal* sets this; one-shot executors
+  /// (snippets) leave it false because they need dartssh2's second channel.
+  /// Falls back to dartssh2 whenever [Toolchain.canServe] says no — jump
+  /// servers and ProxyCommand are not yet routed through the client.
+  final bool preferOpenSsh;
 
   /// The server behind [source], or null when there is none. What genuinely
   /// needs one asks for it here; everything else works from [source].
@@ -107,6 +121,10 @@ class TerminalSession {
       _ownsBackend = true;
       return;
     }
+    // The OpenSSH client keeps its own connection; there is nothing a shared
+    // dartssh2 client could offer it. Leave the backend empty so [connect]
+    // opens it below.
+    if (preferOpenSsh && Toolchain.canServe(spi!)) return;
     if (client != null && !client.isClosed) {
       _backend = SshShellBackend(client);
       _ownsBackend = false;
@@ -146,6 +164,16 @@ class TerminalSession {
         'session': session,
       });
       return _backend = _localBackend(local);
+    }
+
+    // The bundled OpenSSH client, when this session wants it and the server
+    // is a shape it can reach. Everything else — monitor agent first, then
+    // dartssh2 — is unchanged below.
+    if (preferOpenSsh && Toolchain.canServe(spi!)) {
+      Diag.crumb(SbDiag.terminal, 'open openssh shell', data: {
+        'session': session,
+      });
+      return _backend = OpenSshShellBackend(spi: spi!);
     }
 
     final agent = _grantedBackend(granted);
