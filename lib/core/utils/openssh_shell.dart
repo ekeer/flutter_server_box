@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
 
+import 'package:fl_lib/fl_lib.dart';
 import 'package:flutter_pty/flutter_pty.dart';
 import 'package:server_box/core/utils/server.dart' show resolvePrivateKeys;
 import 'package:server_box/core/utils/toolchain.dart';
@@ -54,8 +55,30 @@ class OpenSshShellBackend implements ShellBackend {
     if (_closed) {
       throw StateError('This OpenSSH shell backend is closed');
     }
-    final args = await _prepare();
-    return _start(args, width: width, height: height, environment: environment);
+    try {
+      final args = await _prepare();
+      return _start(
+        args,
+        width: width,
+        height: height,
+        environment: environment,
+      );
+    } catch (e, st) {
+      // Whatever kept the pty from starting, say so in the terminal instead of
+      // leaving the page silently blank (the page's connection path has no
+      // error handler of its own).
+      final native = Toolchain.isSupported;
+      final message = [
+        'OpenSSH shell failed to start: $e',
+        if (native)
+          'binDir: ${Toolchain.binDir}\n'
+              'nativeDir: ${Toolchain.nativeDir}\n'
+              'bash exists: ${File('${Toolchain.binDir}/bash').existsSync()}',
+        'stack: $st',
+      ].join('\n');
+      Loggers.app.warning('OpenSSH shell start failed', e, st);
+      return _FailingSession(message);
+    }
   }
 
   @override
@@ -147,8 +170,10 @@ class OpenSshShellBackend implements ShellBackend {
     // Run ssh through bash so its diagnostics reach the terminal either way:
     // `exec` hands the pty to ssh unchanged, and if ssh cannot even start,
     // bash prints where it looked and what it found instead of the page going
-    // silently blank.
+    // silently blank. ssh runs with -v for now so the handshake is visible on
+    // screen until the blank-session problem is pinned down.
     const probe = r'''
+echo "== bundled ssh =="
 if ! command -v ssh >/dev/null 2>&1; then
   echo "ERROR: bundled ssh not found"
   echo "PATH=$PATH"
@@ -157,7 +182,7 @@ if ! command -v ssh >/dev/null 2>&1; then
   echo "-- lib --"; ls -la "$HOME/lib" 2>&1 | head -20
   exit 127
 fi
-exec ssh "$@"
+exec ssh -v "$@"
 ''';
     final session = _OpenSshSession(
       Pty.start(
@@ -229,5 +254,45 @@ class _OpenSshSession implements ShellSession {
     try {
       _pty.kill(signal);
     } catch (_) {}
+  }
+}
+
+/// A [ShellSession] that has nothing to run: pty startup failed, and the page
+/// must see why. Renders [message] once, then sits open — closing is up to
+/// whoever owns the page — so the reason never flashes by and vanishes.
+class _FailingSession implements ShellSession {
+  _FailingSession(this.message);
+
+  final String message;
+  final _out = StreamController<Uint8List>();
+  final _done = Completer<void>();
+  var _emitted = false;
+
+  @override
+  Stream<Uint8List>? get stdout {
+    if (!_emitted) {
+      _emitted = true;
+      _out.add(Uint8List.fromList('$message\r\n'.codeUnits));
+      // Close the stream once the message is out; done stays open.
+      _out.close();
+    }
+    return _out.stream;
+  }
+
+  @override
+  Stream<Uint8List>? get stderr => null;
+
+  @override
+  void write(List<int> data) {}
+
+  @override
+  void resizeTerminal(int width, int height) {}
+
+  @override
+  Future<void> get done => _done.future;
+
+  @override
+  void close() {
+    if (!_done.isCompleted) _done.complete();
   }
 }
