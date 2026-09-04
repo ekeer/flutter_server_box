@@ -1,0 +1,1 @@
+exec coreutils --coreutils-prog=env "$@"

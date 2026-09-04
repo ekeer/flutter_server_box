@@ -1,0 +1,42 @@
+function main() {
+    local suHelp=$($SU_COMMAND --help 2>&1)
+    if [[ $suHelp == *"permission denied"* ]] || [[ $suHelp == *"Permission denied"* ]]; then
+        echo "Permission denied"
+        exit 1
+    fi
+
+    local cmd=""
+    while [[ "$#" > 0 ]]; do
+        local arg="$1"
+        shift
+        case "$arg" in
+            "-h" | "--help" )
+                echo "Usage: su [-c COMMAND]"
+                exit 0
+                ;;
+            "-c" | "--command" )
+                for arg in "$@"; do
+                    arg=${arg//\"/\\\"}
+                    arg=${arg//$/\\\$}
+                    arg=${arg//\\/\\\\}
+                    cmd+="\"$arg\" "
+                done
+                break
+                ;;
+        esac
+    done
+
+    local sh=$(mt-envdump $cmd)
+    if [[ $suHelp == *"Magisk"* ]] || [[ $suHelp == *"--command"* ]]; then
+        su2 -c "source $sh"
+    else
+        su2 0 "source $sh"
+    fi
+}
+
+if [ "$SU_COMMAND" = "su" ]; then
+  echo "su: command not found" >&2
+  exit 1
+fi
+
+main "$@"
