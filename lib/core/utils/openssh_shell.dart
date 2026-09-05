@@ -173,15 +173,22 @@ class OpenSshShellBackend implements ShellBackend {
     // silently blank. ssh runs with -v for now so the handshake is visible on
     // screen until the blank-session problem is pinned down.
     const probe = r'''
-echo "== bundled ssh =="
+echo "== bundled ssh startup =="
+echo "shell-pid=$$"
+echo "cwd=$(pwd)"
+echo "HOME=$HOME"
+echo "PATH=$PATH"
+echo "LD_LIBRARY_PATH=$LD_LIBRARY_PATH"
+echo "-- HOME/bin (symlink layer) --"
+ls -la "$HOME/bin" 2>&1 | head -20
+echo "-- HOME/lib (symlink layer) --"
+ls -la "$HOME/lib" 2>&1 | head -20
 if ! command -v ssh >/dev/null 2>&1; then
   echo "ERROR: bundled ssh not found"
-  echo "PATH=$PATH"
-  echo "LD_LIBRARY_PATH=$LD_LIBRARY_PATH"
-  echo "-- bin --"; ls -la "$HOME/bin" 2>&1 | head -20
-  echo "-- lib --"; ls -la "$HOME/lib" 2>&1 | head -20
   exit 127
 fi
+echo "-- which ssh --"
+command -v ssh
 exec ssh -v "$@"
 ''';
     final session = _OpenSshSession(
