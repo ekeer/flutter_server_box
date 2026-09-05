@@ -169,6 +169,17 @@ class TerminalSession {
     // The bundled OpenSSH client, when this session wants it and the server
     // is a shape it can reach. Everything else — monitor agent first, then
     // dartssh2 — is unchanged below.
+    if (preferOpenSsh) {
+      // TEMP diagnostic: say, in the terminal itself, which way the decision
+      // went. A blank page gives no other hint whether the toolchain was
+      // found, whether the symlink layer exists, or whether we fell back to
+      // dartssh2.
+      terminal.writeLn(
+        'termex: supported=${Toolchain.isSupported} '
+        'dir=${Toolchain.isSupported ? Toolchain.binDir : "N/A"} '
+        'serve=${Toolchain.canServe(spi!)}',
+      );
+    }
     if (preferOpenSsh && Toolchain.canServe(spi!)) {
       Diag.crumb(SbDiag.terminal, 'open openssh shell', data: {
         'session': session,
