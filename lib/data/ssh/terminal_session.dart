@@ -174,7 +174,7 @@ class TerminalSession {
       // went. A blank page gives no other hint whether the toolchain was
       // found, whether the symlink layer exists, or whether we fell back to
       // dartssh2.
-      terminal.writeLn(
+      writeLn(
         'termex: supported=${Toolchain.isSupported} '
         'dir=${Toolchain.isSupported ? Toolchain.binDir : "N/A"} '
         'serve=${Toolchain.canServe(spi!)}',
